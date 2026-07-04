@@ -119,12 +119,23 @@ elif run:
         text_color = "#12172b"
         return [f"background-color: {color}; color: {text_color}"] * len(row)
 
-    if missing:
-        st.subheader(f"Missing ASINs ({len(missing)})")
-        missing_df = df[df["status"] == "missing"]
-        st.dataframe(missing_df.style.apply(style_status, axis=1), width="stretch", hide_index=True)
-    else:
-        st.success("All ASINs are present in the search results.")
+    missing_col, present_col = st.columns(2)
+
+    with missing_col:
+        if missing:
+            st.subheader(f"Missing ASINs ({len(missing)})")
+            missing_df = df[df["status"] == "missing"]
+            st.dataframe(missing_df.style.apply(style_status, axis=1), width="stretch", hide_index=True)
+        else:
+            st.success("All ASINs are present in the search results.")
+
+    with present_col:
+        if present:
+            st.subheader(f"Present ASINs ({len(present)})")
+            present_df = df[df["status"] == "present"]
+            st.dataframe(present_df.style.apply(style_status, axis=1), width="stretch", hide_index=True)
+        else:
+            st.error("None of the ASINs are present in the search results.")
 
     with st.expander("Full results (present + missing)"):
         st.dataframe(df.style.apply(style_status, axis=1), width="stretch", hide_index=True)
