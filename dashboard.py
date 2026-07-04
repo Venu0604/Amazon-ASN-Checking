@@ -8,12 +8,24 @@ Usage:
     streamlit run dashboard.py
 """
 
+import subprocess
+import sys
+
 import pandas as pd
 import streamlit as st
 
 from checker import run_check
 
 st.set_page_config(page_title="Amazon ASIN Missing Checker", page_icon="🔍", layout="wide")
+
+
+@st.cache_resource
+def _ensure_chromium_installed():
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    return True
+
+
+_ensure_chromium_installed()
 
 st.markdown(
     """
