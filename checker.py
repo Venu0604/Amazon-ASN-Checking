@@ -73,10 +73,14 @@ def extract_asins_from_page(page):
     return found
 
 
-def run_check(url, on_progress=None):
+def run_check(url, on_progress=None, proxy=None):
     """
     Runs the browser check against `url`.
     on_progress(message: str) is called with human-readable status updates.
+    proxy: optional Playwright proxy dict, e.g. {"server": "http://host:port",
+        "username": "...", "password": "..."}. Needed when the machine running
+        this (e.g. Streamlit Community Cloud) has a datacenter IP that Amazon
+        blocks outright — routing through a residential proxy works around that.
 
     Returns a dict: {"asins": [...], "found": set(...), "present": [...], "missing": [...]}
     """
@@ -91,11 +95,15 @@ def run_check(url, on_progress=None):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
+        context_kwargs = dict(
             user_agent=USER_AGENT,
             locale="en-IN",
             viewport={"width": 1280, "height": 1800},
         )
+        if proxy:
+            context_kwargs["proxy"] = proxy
+            log(f"Routing through proxy {proxy['server']}.")
+        context = browser.new_context(**context_kwargs)
         page = context.new_page()
 
         for attempt in range(1, MAX_LOAD_RETRIES + 1):
@@ -108,10 +116,11 @@ def run_check(url, on_progress=None):
             )
             time.sleep(3 * attempt)
         else:
+            last_title = page.title()
             browser.close()
             raise RuntimeError(
                 f"Amazon blocked this request after {MAX_LOAD_RETRIES} attempts "
-                f"(last page title: {page.title()!r}). This is not a real 'all missing' "
+                f"(last page title: {last_title!r}). This is not a real 'all missing' "
                 "result — it usually means the server this app runs on is being rate-limited "
                 "or CAPTCHA-challenged by Amazon. Try again in a bit."
             )

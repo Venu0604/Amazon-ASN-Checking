@@ -27,6 +27,26 @@ def _ensure_chromium_installed():
 
 _ensure_chromium_installed()
 
+
+def _get_proxy_config():
+    """Optional residential proxy (set via Streamlit secrets) to get around
+    Amazon blocking Streamlit Cloud's datacenter IP range outright."""
+    try:
+        server = st.secrets.get("PROXY_SERVER")
+    except Exception:
+        return None
+    if not server:
+        return None
+    proxy = {"server": server}
+    username = st.secrets.get("PROXY_USERNAME")
+    password = st.secrets.get("PROXY_PASSWORD")
+    if username:
+        proxy["username"] = username
+    if password:
+        proxy["password"] = password
+    return proxy
+
+
 st.markdown(
     """
     <style>
@@ -91,7 +111,7 @@ elif run:
 
     try:
         with st.spinner("Opening browser and reading search results..."):
-            result = run_check(url.strip(), on_progress=on_progress)
+            result = run_check(url.strip(), on_progress=on_progress, proxy=_get_proxy_config())
     except Exception as e:
         st.error(f"Failed to check URL: {e}")
         st.stop()
