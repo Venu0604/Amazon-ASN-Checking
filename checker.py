@@ -15,22 +15,44 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
               "AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/124.0.0.0 Safari/537.36")
 
-BLOCK_MARKERS = (
+BLOCK_TEXT_MARKERS = (
     "503 - service unavailable",
     "sorry, we just need to make sure you're not a robot",
     "enter the characters you see below",
-    "/errors/validatecaptcha",
     "robot check",
+    "unusual traffic",
+    "automated access",
 )
+BLOCK_URL_MARKERS = ("validatecaptcha", "opfcaptcha")
 
 
-def page_is_blocked(page):
-    """Detect Amazon bot-check / rate-limit pages so we don't mistake them for real (empty) results."""
-    title = (page.title() or "").lower()
-    if any(marker in title for marker in BLOCK_MARKERS):
+def page_is_blocked(page, response=None):
+    """
+    Detect Amazon bot-check / rate-limit / error pages so we don't mistake them
+    for real (empty) search results. Real Amazon.in search pages — even ones
+    with zero matches — return HTTP 200 and still render the normal nav/search
+    bar; block/challenge pages typically fail at least one of these checks.
+    """
+    if response is not None and response.status >= 400:
         return True
-    body_text = (page.content() or "").lower()
-    return any(marker in body_text for marker in BLOCK_MARKERS)
+
+    url_l = (page.url or "").lower()
+    if any(marker in url_l for marker in BLOCK_URL_MARKERS):
+        return True
+
+    title = (page.title() or "").lower()
+    if any(marker in title for marker in BLOCK_TEXT_MARKERS):
+        return True
+
+    if any(marker in (page.content() or "").lower() for marker in BLOCK_TEXT_MARKERS):
+        return True
+
+    # A real search page (results or genuinely empty) still has the standard
+    # Amazon nav/search bar. If that's gone, we're on some other page entirely.
+    if not page.query_selector("#nav-logo") and not page.query_selector("#twotabsearchtextbox"):
+        return True
+
+    return False
 
 
 def parse_asins_from_url(url):
@@ -77,16 +99,21 @@ def run_check(url, on_progress=None):
         page = context.new_page()
 
         for attempt in range(1, MAX_LOAD_RETRIES + 1):
-            page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            if not page_is_blocked(page):
+            response = page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            if not page_is_blocked(page, response):
                 break
-            log(f"Amazon returned a block/CAPTCHA page (attempt {attempt}/{MAX_LOAD_RETRIES}), retrying ...")
+            log(
+                f"Amazon returned a block/CAPTCHA/error page "
+                f"(title: {page.title()!r}, attempt {attempt}/{MAX_LOAD_RETRIES}), retrying ..."
+            )
             time.sleep(3 * attempt)
         else:
             browser.close()
             raise RuntimeError(
-                "Amazon blocked this request (bot-check/503 page) after several retries. "
-                "Try again in a bit — this is not a real 'all missing' result."
+                f"Amazon blocked this request after {MAX_LOAD_RETRIES} attempts "
+                f"(last page title: {page.title()!r}). This is not a real 'all missing' "
+                "result — it usually means the server this app runs on is being rate-limited "
+                "or CAPTCHA-challenged by Amazon. Try again in a bit."
             )
 
         page_num = 1
